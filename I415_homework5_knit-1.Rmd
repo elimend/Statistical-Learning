@@ -1,0 +1,161 @@
+---
+title: "Regression Part 2"
+output: html_document
+date: "2023-02-13"
+---
+
+title: "Lab 5: Regression Part 2"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+## Part 1 - Regression with Factors
+
+The fish dataset can be used for regression problems to predict the weight of a fish (sold in a fish market) based on its species and some various measurements of its length. Here is the Fish.csv file you can use for this problem.
+
+Carry out a regression fit of weight against the other variables and describe whether there is a relationship between at least one predictor and the response. If there is such a relationship, describe which predictors may have a significant effect on the response. 
+
+```{r}
+library(tidyverse)
+library(GGally)
+library(dplyr)
+# Read in the Fish.csv file
+fish <- read.csv("fish.csv")
+summary(fish)
+dim(fish)
+
+# Regression fit:
+fish_fit <- lm(Weight~., data = fish)
+summary(fish_fit)
+```
+
+** There is a relationship indicated between at least one predictor and response
+because the F-statistic is much greater than 1. The predictors with stars are more likely to be significant on the response, as this indicates they are correlated to each other. There are only three predictors
+that have stars: SpeciesParkki, SpeciesSmelt, and Length1.
+These predictors are likely to be correlated due to their t-value and p-value's
+being less close to 0 than the other predictors.  **
+
+Focusing on the factors in the species features, are all the features derived from that factor significantly related to the response? Explain your reasoning. If not, re-code that feature to aggregate all the non-statistically-significant factors into a single level. With this re-coded dataset, re-do the regression fit and compare the two fits. 
+
+```{r}
+# In the fit above, we are shown that of the Species feature, only Parkki and Smelt
+# are the only fish species' show correlation to the response. 
+table(fish$Species)
+
+# We have to recode due to only two species' being significant in the original fish_fit:
+# Noticed Bream isn't in the original linear fit so can't add to the Etc category
+new_fish <- fish %>%
+  mutate(Species = recode_factor(Species, "Perch" = "Etc", "Pike" = "Etc",
+                                          "Roach"="Etc","Whitefish"="Etc"))
+
+table(new_fish$Species)
+
+# Creating a new linear fit to compare this one and original:
+new_fish_fit <- lm(Weight~., data = new_fish)
+summary(new_fish_fit)
+```
+
+
+**After recoding, we compare the two fits, the original had a R-squared of 0.9361 and an adjusted r-square
+of 0.9313. With the new fish fit, we have 0.9264 for the r-squared value, while
+the adjusted r-squared value is 0.9224. These values do not differ that much (being
+only .0100 off in the R-Squared values).
+Because we cut down the predictors (recoded above), we also see some new 
+significant correlations come out now that weren't there before. **
+
+For your best model, create a plot of the residual  versus the response and describe your interpretation of that plot. Is a linear model suitable, or should a nonlinear model be considered?
+
+```{r fig.cap="Predicted vs Residual Original fish fit"}
+# Choosing to go with the original fit (fish_fit) for the model, due to the significances
+# found in the new_fish_model. Would rather indicate the original model as best.
+res <- resid(fish_fit) # Get residuals list
+pred <- predict(fish_fit)
+ggplot(data = fish_fit, mapping = aes(x = pred, y = res)) +
+  geom_point() + geom_smooth() + xlab("Predicted") + ylab("Residual")
+```
+
+**The above residual plot shows predicted against residual. Because we are using
+residuals, a nonlinear graph might be better since nonlinear models produce
+smaller residuals.**
+
+## Part 2 - Regression with Correlated Predictors (collinearity) or Worse (multicollinearity)
+
+We will use the California housing dataset (from last week's assignment) again this week. Using the variance inflation factor, determine which features may not be necessary in this dataset because of collinearity or multicollinearity. Based on your findings, create a multiple linear regression fit for the reduced feature set and compare it to the fit against all features using the RSE and anova (plus any other comparisons you may like to come up with). 
+
+```{r}
+suppressWarnings(suppressMessages(library(car)))
+housing <- read.table("cadata.dat", header = F,
+                      strip.white = T)
+names(housing) <- c("med_houseval", "med_income", "house_medage", "total_rooms",
+                    "total_beds", "population", "households", "latitude",
+                    "longitude")
+
+
+origin_house_fit <- lm(med_houseval ~., data = housing)
+summary(origin_house_fit)
+# All features seem to be highly significant to the response, so I will try 
+# something else: VIF
+vif(origin_house_fit)
+```
+
+**In the original house fit, all features/predictors seem to be highly significant
+so VIF is tried. VIF a lot larger than 5 can indicate "problems" within the data, so those
+that are large should be looked at. Since total_beds and households are
+close in number together, should remove both and then look at the model fit
+when those features are removed.**
+
+For the features, you removed, use the correlation matrix, ANOVA, and other regression fits to understand better the relationships between the removed features.
+
+Write up the summary of your efforts as a lab report in your R markdown file. Be sure to include the correlation matrix, scatterplots for any pairs of highly correlated features, and a table comparing your two multiple regression fits. All of these should be "inline" (part of the regular flow of the text) rather than dumped at the beginning or end of your text.
+
+```{r}
+removed_partial_fit <- update(origin_house_fit, ~.-total_beds-households)
+summary(removed_partial_fit)
+vif(removed_partial_fit)
+# Some of the features VIF have gone down, closer to 5, when removing total_beds 
+# and households
+
+# Create the correlation matrix:
+removed_partial <- select(housing, -total_beds, -households)
+cor(removed_partial)
+
+# Will remove latitude and longitude since the fit indiciates they are only
+# strongly correlated to each other.
+removed_partial2 <- select(removed_partial, -latitude, -longitude)
+removed_partial_fit2 <- lm(med_houseval~., data = removed_partial2)
+summary(removed_partial_fit2)
+vif(removed_partial_fit2)
+# total_rooms and population have gotten lower, when removing latitude/longitude
+
+# Starting the comparsions:
+cor(removed_partial2)
+# Comparing the correlation matrix of the first partial and the 2nd partial -
+# Correlation looks the same between each of values comparing between the two 
+# different fits.
+
+anova(origin_house_fit, removed_partial_fit)
+# F is much greater than 1 (734.37), so this shows that removing those two predictors
+# /features indicates it affected the fit a lot.
+
+anova(removed_partial_fit, removed_partial_fit2)
+# F is much much greater than 1 (2506.9). Since comparing the two fits (original
+# fit) and (removed_partial_fit) have a large F value so we already know removing
+# features have significantly affected the fit. So looking at these two fits (1st
+# partial fit) and (2nd partial fit), we would expect to see a large F value
+# since we removed more predictors/features. The F value is much higher between
+# these two fits since they have features removed. 
+```
+
+**In the first partial fit, total beds and households were removed, due to their
+high values in the VIF. In the second partial fit latitude and longitude were removed,
+due to their low correlation with any other predictor/response.
+When Anova is done to both the original fit vs first partial fit, the F is much
+greater than 1, indicated removing total beds and households affected the fit greatly.
+When Anova is done to the first partial fit and second partial fit, the F is much
+greater than 1 as well and greater than the first Anova done. This indicates all
+predictors removed were valuable to the fit.**
+
