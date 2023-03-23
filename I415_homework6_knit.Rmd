@@ -1,0 +1,260 @@
+---
+title: 'Lab 6: Classification Part 1'
+output: html_document
+date: "2023-02-17"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+## Part 1 - Statlog (heart) dataset
+
+Use the statlog heart dataset and recode the factors as well.
+1. In the markdown document, include a tabular summary of the dataset and the correlation matrix
+for the numerical features. For any highly correlated pairs of features, include some
+individual scatterplots. It may be helpful to view the scatterplot matrix, but with
+so many features in the dataset, don't include it in your markdown document.
+
+```{r}
+library(tidyverse)
+library(GGally)
+library(dplyr)
+# Read in the heart statlog file and recode:
+heart <- read.table("https://archive.ics.uci.edu/ml/machine-learning-databases/statlog/heart/heart.dat", header = FALSE)
+names(heart) <- c("age", "sex", "cpt", "rbp", "serum", "fbs", "rer", "mhr", "eia",
+                  "oldpeak", "slope", "nmaj", "thal", "class")
+
+recoded_heart <- heart %>%
+  mutate(sex = recode_factor(sex, "0" = "female", "1" = "male"),
+         cpt = recode_factor(cpt, "1" = "typical angina", "2" = "atypical angina", 
+                             "3" = "non anginal pain", "4" = "asymptomatic"), 
+         fbs = recode_factor(fbs, "1" = "true", "0" = "false"), 
+         rer = recode_factor(rer, "0" = "normal", "1" = "wave abnormal", "2" = "left hypertrophy"), 
+         eia = recode_factor(eia, "0" = "no", "1" = "yes"), 
+         slope = recode_factor(slope, "1" = "up", "2" = "flat", "3" = "down"), 
+         thal = recode_factor(thal, "3" = "normal", "6" = "fixed defect", "7" = "reversable defect"), 
+         class = recode_factor(class, "1" = "absence", "2" = "presence"))
+
+recoded_heart$class = as.factor(recoded_heart$class)
+
+# Summary and correlation matrix:
+summary(recoded_heart)
+
+# Won't include correlation matrix according to the instructions 
+
+```
+
+2. Build a logistic regression model and evaluate its overall accuracy. Is every feature
+a significant predictor in this model? Which features significantly increase the
+likelihood of heart disease and which significantly decrease that likelihood?
+
+```{r}
+heart_fit <- glm(class~., data = recoded_heart, family = "binomial")
+
+summary(heart_fit)
+# Summay of the model fit and can see what features are significant: looking at both
+# z and p-values we see sexmale, cpt, rbp, nmaji, and thal.
+
+# Can use contrasts to see the response we can get from the class feature:
+contrasts(recoded_heart$class)
+
+# Want to get the probabilites back for the class in heart so we use "response":
+predicted_probs <- predict(heart_fit, recoded_heart, type = "response")
+
+# Making a new data frame with transmute - will be doing 0.5 since the 
+# predicted classes is a 0 or 1 for absence or presence.
+predicted_class <- transmute(data.frame(predicted_probs), class = ifelse 
+                             (predicted_probs > 0.5, "presence", "absence"))
+
+# Using mean function to see if predictions were correct:
+compare_heart <- mean(predicted_class$class == recoded_heart$class)
+print(compare_heart)
+```
+
+3. If there are insignifcant features, build a model using a reduced feature set and compare
+the overall accuracy with that of the full model.
+
+```{r}
+# Want to get rid of insignificant features from the previous model:
+reduced_heart_fit <- glm(class~sex+cpt+rbp+nmaj+thal, data = recoded_heart, 
+                         family = "binomial")
+
+
+summary(reduced_heart_fit)
+
+
+# Because we will be comparing this new reduced model and the previous model, 
+# Need to do the same steps we did with the previous model such as transmutting:
+new_predicted_prob <- predict(reduced_heart_fit, recoded_heart, type = "response")
+new_predicted_class <- transmute(data.frame(new_predicted_prob), class = ifelse
+                                 (new_predicted_prob > 0.5, "presence", "absence"))
+
+
+new_compare_heart <- mean(new_predicted_class$class == recoded_heart$class)
+
+print(compare_heart)
+print(new_compare_heart) 
+```
+
+**Comparing the two models: compare_heart which is the model fit with all features
+against the predictor and new_compare_heart which is the model fit with reduced
+insignifcant features taken out. In the original fit (compare_heart) we receive
+a model accuracy of 0.8777778 score, while in the reduced fit (new_compare_heart)
+we receive a model accuracy of 0.8481481. There is some difference between these
+model accuracy scores, however we must also take into consideration we are removing
+at least 4 features.**
+
+
+4. Comment on the nominal features in the dataset. Are all level significant predictors
+of heart disease? Which ones increase the likelihood of heart disease and which ones
+decrease the likelihood?
+
+```{r}
+# Using the contrasts function we can look at all the nomial features - cpt, slope,
+# and thal. 
+contrasts(recoded_heart$sex)
+contrasts(recoded_heart$cpt)
+contrasts(recoded_heart$slope)
+contrasts(recoded_heart$thal)
+```
+
+**Since 0 and 1 are used for absence and presence of heart disease, that will help
+when looking at each nomial feature. Since sex is recoded with 0 and 1, we can
+see that being male increases the likelihood of heart disease. For cpt, since all
+types of anginal pain + asymptomatic have a 1, they all have an increased likelihood of heart disease
+(atypical angina, non-anginal pain, and asymptomatic). For slope, both having a flat
+or down slope so both increase the likelihood. For thal, since both fixed defect and
+reversable defect have positive, both have a likelihood.**
+
+
+## Part 2 - Auto dataset
+
+In this problem, you will develop a model to predict whether a given car gets
+high or low gas mileage based on the Auto data set.
+```{r}
+# Call in libraries and dataset needed:
+library(GGally)
+library(ISLR)
+library(dplyr)
+library(tidyverse)
+data(Auto)
+```
+
+
+a. Create a binary variable, mpg01, that contains a 1 if mpg contains a value above
+its median, and a 0 if mpg contains a value below its median. You can compute the 
+median using the median function. Note you may find it helpful to use the data.frame()
+function to create a single data set containing both mpg01 and the other Auto variables.
+
+```{r}
+median_mpg <- median(Auto$mpg)
+Auto$mpg01 = as.numeric(Auto$mpg > median_mpg)
+```
+
+b. Explore the data graphically in order to investigate the association between
+mpg01 and the other features. Which of the other features seem most likely to
+be useful in predicting mpg01? Scatterplots and boxplots may be useful tools to 
+answer this question. Describe your findings. 
+
+```{r}
+# Remove name function, has more levels than allowed for threshold:
+Auto <- subset(Auto, select = -name)
+summary(Auto)
+
+
+#  Create scatterplot matrix:
+ggpairs(Auto, aes(color = as.factor(mpg01)))
+```
+
+**Using ggpairs to get the scatterplot matrix, we can see the separation.
+There is a separation in most of the year plots except accerlation with year.
+Of the plots displacement and horsepower appear to have a linear relationship, 
+as well as displacement and weight, however there is more mixing in that plot.
+
+c. Split the data into a training set and a test set
+
+```{r}
+# id for every row: 
+new_Auto <- mutate(Auto, id = row_number())
+
+# How much data we want to use in the fraction aka 70% of the dataset below:
+# 30% used for testing:
+Auto_train <- sample_frac(new_Auto, 0.7)
+
+# Taking all the rows not in the training set to put in testing set:
+Auto_test <- anti_join(new_Auto, Auto_train, by = 'id')
+
+
+Auto_train <- dplyr::select(Auto_train, -id)
+Auto_test <- dplyr::select(Auto_test, -id)
+```
+
+d. Perform LDA on the training data in order to predict mpg01 using the variables
+that seemed most associated with mpg01 in b. What is the test error of the model obtained?
+
+```{r}
+# Need MASS library for LDA
+library(MASS)
+
+# Building LDA model based on variables most associated with mpg01, in the matrix
+# above the most separation occurs in displacement, horsepower, and weight
+Auto_lda <- lda(mpg01~displacement+horsepower+weight, data = Auto_train)
+
+# Creating a prediction:
+lda_predictions <- predict(Auto_lda, Auto_test)
+
+# Looking at the accuracy or comparisons of prediction against real dataset:
+mean(Auto_test$mpg01 == lda_predictions$class)
+```
+
+**Test error obtained from the lda prediction model is 0.8728814**
+
+e. Perform QDA on the training data in order to predict mpg01 using the variables
+that seemed most associated with mpg01 in b. What is the test error of the model
+obtained?
+
+```{r}
+# Building QDA model based on variables in the auto training data:
+Auto_qda <- qda(mpg01~., data = Auto_train)
+
+# Creating a prediction:
+qda_predictions <- predict(Auto_qda, Auto_test)
+
+# Looking at the accuracy or comparisons of prediction against real dataset:
+mean(Auto_test$mpg01 == qda_predictions$class)
+```
+**Test error obtained from the qda prediction model is 0.9237288**
+
+f. Perform logistic regression on the training data in order to predict mpg01 using
+the variables that seemed most associated with mpg01 in b. What is the test error
+of the model obtained?
+
+```{r}
+# Building glm fit based on variables in the auto training data:
+Auto_glm <- glm(mpg01~., data = Auto_train, family = "binomial")
+
+# Creating a prediction:
+Auto_glm_probs <- predict(Auto_glm, Auto_test, type = "response")
+Auto_glm_class <- transmute(data.frame(Auto_glm_probs), mpg01 = ifelse 
+                             (Auto_glm_probs > 0.5, 1, 0))
+
+# Looking at the accuracy or comparisons of prediction against real dataset:
+mean(Auto_test$mpg01 == Auto_glm_class$mpg01)
+```
+g. Perform KNN on the training data, with several values of K, in order to predict
+mpg01. Use only the variables that seemed most associated with mpg01 in b. What
+test errors do you obtain? Which value of K seems to perform the best on this dataset?
+
+```{r}
+library(class)
+
+set.seed(1)
+
+train <- subset(Auto_train, select = -mpg01)
+test <- subset(Auto_test, select = -mpg01)
+
+#knn = for (k in 1:200) {
+  #knn_predict <- knn(train, test, Auto_train$mpg01, k=k)
+  #knn[1] = 1 - mean(knn_predict == Auto_test)
+#}
+```
